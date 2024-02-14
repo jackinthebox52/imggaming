@@ -40,7 +40,38 @@ class API:
             value = headers[key]
             headers_string += f'{key}: {value}\n'
         return headers_string
+        
+    def _is_playable(self, vod):
+        return vod['type'] in ['VOD_VIDEO', 'VOD']
     
+    def get_playback_data(self, vod_id):
+        vod_data = self.get_vod_data(vod_id)
+        
+        if not vod_data:
+            print('[ERROR] Could not get vod data')
+            return None   
+        
+        if not self._is_playable(vod_data):
+            print('[ERROR] VOD is not playable')
+            return None
+        
+        title = vod_data['title']
+        callback_url = vod_data['playerUrlCallback']
+        max_height = vod_data['maxHeight']
+        
+        headers = self._compile_headers(auth=True)
+        response = requests.get(callback_url, headers=headers)
+        
+        if response.status_code in [200, 201]:
+            pass
+        elif response.status_code == 401:
+            if self.authenticate():
+                return self.get_playback_data(vod_id)
+        else:
+            print('[ERROR] Could not get playback data. HTTP status code: ' + str(response.status_code))
+            return None
+        
+        return {'title': title, 'max_height': max_height, 'playback_data': response.json()}
     
     """
     Preforms a search query against the imggaming cdn, for vods and playlists.
@@ -71,10 +102,14 @@ class API:
         
         response = requests.post(SEARCH_URL, headers=headers, data=body)
         
-        if response.status_code != 200:
-            print(response.status_code)
-            print('[ERROR] Could not search for vods')
-            return False
+        if response.status_code in [200, 201]:
+            pass
+        elif response.status_code == 401:
+            if self.authenticate():
+                return self.search(search_term, **kwargs)
+        else:
+            print('[ERROR] Could not search for vods. HTTP status code: ' + str(response.status_code))
+            return None
         
         return response.json()
     """
@@ -90,11 +125,14 @@ class API:
         headers = self._compile_headers(auth=True)
         response = requests.get(browse_url, headers=headers)
         
-        if response.status_code != 200:
-            print(response.status_code)
-            print('[ERROR] Could not browse for vods')
-            return False
-        
+        if response.status_code in [200, 201]:
+            pass
+        elif response.status_code == 401:
+            if self.authenticate():
+                return self.browse(buckets=buckets, rows=rows)
+        else:
+            print('[ERROR] Could not browse for vods. HTTP status code: ' + str(response.status_code))
+            return None        
         return response.json()
         
         
@@ -106,21 +144,32 @@ class API:
         VOD_URL = f'https://dce-frontoffice.imggaming.com/api/v4/vod/{vod}?includePlaybackDetails=URL'
         headers = self._compile_headers(auth=True)
         response = requests.get(VOD_URL, headers=headers)
-        if response.status_code != 200:
-            print(response.status_code)
-            print('[ERROR] Could not get vod data')
-            return False
+        
+        if response.status_code in [200, 201]:
+            pass
+        elif response.status_code == 401:
+            if self.authenticate():
+                return self.get_vod_data(vod)
+        else:
+            print('[ERROR] Could not get vod data. HTTP status code: ' + str(response.status_code))
+            return None
+
         return response.json()
     
+    """Maximum number of vods to return is 250"""
     def unpack_playlist(self, playlist):
         PLAYLIST_URL = f'https://dce-frontoffice.imggaming.com/api/v4/playlist/{playlist}?bpp=undefined&rpp=250&displaySectionLinkBuckets=HIDE&displayEpgBuckets=HIDE&displayEmptyBucketShortcuts=SHOW'
         headers = self._compile_headers(auth=True)
         response = requests.get(PLAYLIST_URL, headers=headers)
         
-        if response.status_code != 200:
-            print(response.status_code)
-            print('[ERROR] Could not unpack playlist')
-            return False
+        if response.status_code in [200, 201]:
+            pass
+        elif response.status_code == 401:
+            if self.authenticate():
+                return self.unpack_playlist(playlist)
+        else:
+            print('[ERROR] Could not unpack playlist. HTTP status code: ' + str(response.status_code))
+            return None
         
         playlist = response.json()
         vods = playlist['vods']
@@ -143,7 +192,7 @@ class API:
                 secret = os.environ['IMGGAMING_AUTH_PASS']
             except:
                 print('[ERROR] No credentials provided, neither paramters nor environment variables.')
-                return False
+                return None
         
         credentials = {'id': id, 'secret': secret}
 
@@ -151,235 +200,28 @@ class API:
             response = requests.post(LOGIN_URL, headers=headers, json=credentials)
         except requests.exceptions.RequestException as e:
             print('[ERROR] Could not connect to server (Authentication)')
-            return False
+            return None
         
-        if response.status_code != 201:
-            print(response.status_code)
-            print('[ERROR] Could not log in (Authentication)')
-            return False
+        if response.status_code in [200, 201]:
+            pass
+        else:
+            print('[ERROR] Could not authenticate. HTTP status code: ' + str(response.status_code))
+            return None
 
         res_json = response.json()
         self.AuthToken = res_json['authorisationToken']
         self.RefreshToken = res_json['refreshToken']
         
         return True
-    
+
 
 def test_main():
     client = API()
     client.authenticate()
-    #results = client.search('strickland')
-    print(client.browse())
-    # for r in results['results'][0]['hits']:
-    #    print(r['type'])
+    franklin_vs_le = 30852
+    client.get_vod_data(franklin_vs_le)
+    print(client.get_playback_data(franklin_vs_le))
     
 if __name__ == '__main__':
     test_main()
 
-
-#This api will be based off of the following code, which is a script that downloads UFC fight pass vods
-'''
-import requests
-import json
-import time
-from time import strftime, localtime
-import os, sys
-
-MAINTAINER = 'GUTHIX'
-AUTH_TOKEN = None
-REFRESH_TOKEN = None
-
-START_TIME = None
-OUTPUT_DIRECTORY = './output/'
-
-def compile_headers(auth):
-    X_API_KEY = '857a1e5d-e35e-4fdf-805b-a87b6f8364bf'
-    headers = {'Content-Type': 'application/json;', 'Referer': 'https://ufcfightpass.com/', 'Origin': 'https://ufcfightpass.com', 'Realm': 'dce.ufc', "Host": 'dce-frontoffice.imggaming.com', 'app': 'dice', 'x-app-var': '6.0.1.98b90eb'}
-    headers['x-api-key'] = X_API_KEY
-    if auth:
-        headers['Authorization'] = f'Bearer {AUTH_TOKEN}'
-    return headers
-
-
-def compile_headers_string(headers):
-    headers_string = ''
-    for key in headers:
-        value = headers[key]
-        headers_string += f'{key}: {value}\n'
-    return headers_string
-
-
-def compile_title_string(event_meta):
-    title = event_meta['title']
-    title_string = ''
-    for w in title.split():
-        w = w.replace(':', '')
-        title_string += f'{w}.'
-    title_string += f'WEBRip-{MAINTAINER}'
-    return title_string
-
-def download_all(url, event_meta, suppress_output=True):
-    headers = compile_headers(auth=True)
-    headers_string = compile_headers_string(headers)
-
-    description = event_meta['description']
-    title_string = compile_title_string(event_meta)
-    title_directory_path = OUTPUT_DIRECTORY + title_string
-    if os.path.exists(title_directory_path):
-        print(f'Found files for: {title_string}')
-        passed = justify_extant_vod(title_directory_path)
-        if not passed:
-            print(f'Incomplete files found for: {title_string}')
-            return False
-        else:
-            return True
-    os.system(f'mkdir {title_directory_path}')
-
-    ffmpeg_cmd = f'ffmpeg -y -hwaccel cuda -hwaccel_output_format cuda -headers "{headers_string}" -i "{url}" -c:v copy {title_directory_path}/{title_string}.incomplete.mkv'
-    if suppress_output:
-        ffmpeg_cmd += ' > /dev/null 2>&1'
-    print(f"Downloading metadata: {title_string}...")
-    os.system(f'wget {event_meta["thumbnail_url"]} -O {title_directory_path}/thumbnail.jpg')
-    try:
-        poster_url = event_meta["poster_url"]
-        os.system(f'wget {poster_url} -O {OUTPUT_DIRECTORY}{title_string}/poster.jpg')
-    except:
-        pass
-    print(f"Downloading video: {title_string}...")
-    os.system(ffmpeg_cmd) #Run ffmpeg command (blocking)
-    os.system(f'mv {title_directory_path}/{title_string}.incomplete.mkv {title_directory_path}/{title_string}.mkv')
-    return True
-
-def get_vod_meta(id, hls_url):
-    VOD_URL = f'https://dce-frontoffice.imggaming.com/api/v4/vod/{id}?includePlaybackDetails=URL'
-    headers = compile_headers(auth=True)
-    response = requests.get(VOD_URL, headers=headers) #Get vod data from api
-    if response.status_code == 403:
-        return False
-    if response.status_code != 200:
-        login()
-        return get_vod_meta(id, hls_url)#Retry request, only if relogin passes
-
-    title = response.json()['title']
-    description = response.json()['description']
-    thumbnauil_url = response.json()['thumbnailUrl']
-    try:
-        poster_url = response.json()['posterUrl']
-    except:
-        poster_url = None
-    event_meta = {'vod_id': id, 'title': title, 'description': description, 'thumbnail_url': thumbnauil_url, 'poster_url': poster_url}
-    
-    return event_meta
-
-def justify_extant_vod(title_directory_path):
-    for file in os.listdir(title_directory_path):
-        if file.endswith('.mkv'):
-            if('incomplete' in file):
-                return False
-            else:
-                return True
-    return False
-
-
-def get_vod_stream(id):
-    VOD_URL = f'https://dce-frontoffice.imggaming.com/api/v3/stream/vod/{id}?includePlaybackDetails=URL'
-    headers = compile_headers(auth=True)
-    response = requests.get(VOD_URL, headers=headers)
-    if response.status_code == 403:
-        return False
-    if response.status_code != 200:
-        print(response.status_code)
-        login()
-        return get_vod_stream(id)#Retry request, only if relogin passes
-    callback_url = response.json()['playerUrlCallback']
-    
-    response = requests.get(callback_url, headers=headers)
-    hls_url = response.json()['hls'][0]['url']
-    return hls_url
-
-def get_playlist_ids(id):
-    PLAYLIST_URL = f'https://dce-frontoffice.imggaming.com/api/v4/playlist/{id}?bpp=undefined&rpp=250&displaySectionLinkBuckets=HIDE&displayEpgBuckets=HIDE&displayEmptyBucketShortcuts=SHOW'
-    headers = compile_headers(auth=True)
-    response = requests.get(PLAYLIST_URL, headers=headers)
-    if response.status_code == 403:
-        return False
-    if response.status_code != 200:
-        login()
-        return get_playlist_ids(id)
-    playlist = response.json()
-    vods = playlist['vods']
-    id_list = []
-    for vod in vods:
-        if vod['type'] == 'VOD':
-            id_list.append(vod['id'])
-    print(id_list)
-    return id_list
-
-def login():
-    LOGIN_URL = 'https://dce-frontoffice.imggaming.com/api/v2/login'
-    headers = compile_headers(auth=False)
-
-    credentials = {'id': 'jackmassey2000@gmail.com', 'secret': 'Jackson123123!'}
-
-    response = requests.post(LOGIN_URL, headers=headers, json=credentials)
-    if response.status_code != 201:
-        print(response)
-        print(response.status_code)
-        print(response.json())
-        print('[ERROR] Could not log in')
-        exit()
-
-    res_json = response.json()
-    global AUTH_TOKEN
-    global REFRESH_TOKEN
-    AUTH_TOKEN = res_json['authorisationToken']
-    REFRESH_TOKEN = res_json['refreshToken']
-
-def process_downloads(id_list):
-    list_len = len(id_list)
-    index = 1
-    for id in id_list:
-        print(f'Processing VOD: {id} - {index}/{list_len}')
-        hls_url = get_vod_stream(id)
-        event_meta = get_vod_meta(id, hls_url)
-        if hls_url and event_meta:
-            if not download_all(hls_url, event_meta):
-                id_list.append(id)
-                print(f'Rescheduled download: {id}')
-            else:
-                print(f'Finished downloading {id}\n\n')
-            index += 1
-        else:
-            print(f'[ERROR] Failed to get vod stream {id}')
-
-def main(id):
-    global START_TIME
-    START_TIME = time.time()
-
-    id_list = [id]
-    if not get_vod_stream(id): #If input is not a stream, it is likely a playlist, if not, the script will fail
-        id_list = get_playlist_ids(id)
-    process_downloads(id_list)
-
-    time_elapsed = time.time() - START_TIME
-    time_elapsed_string = strftime('%H:%M:%S', localtime(time_elapsed))
-    print(f'Finished downloading {len(id_list)} vods in {time_elapsed_string}')
-
-
-if __name__ == '__main__':
-    args = sys.argv
-    if len(args) <= 2:
-        print('Usage: python main.py <vod_id> (Optional: <output_directory>)')
-        exit()
-    login()
-
-    id = args[1]
-    if len(args) == 3:
-        OUTPUT_DIRECTORY = args[2]
-        if OUTPUT_DIRECTORY[-1] != '/':
-            OUTPUT_DIRECTORY += '/'
-        print(f'Setting output directory: {OUTPUT_DIRECTORY}')
-
-        main(id)
-
-'''
