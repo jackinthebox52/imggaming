@@ -1,0 +1,9 @@
+README.md
+setup.py
+imggaming/__init__.py
+imggaming/client.py
+imggaming.egg-info/PKG-INFO
+imggaming.egg-info/SOURCES.txt
+imggaming.egg-info/dependency_links.txt
+imggaming.egg-info/requires.txt
+imggaming.egg-info/top_level.txt

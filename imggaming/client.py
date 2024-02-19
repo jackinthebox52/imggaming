@@ -35,7 +35,10 @@ class API:
         return headers_string
         
     def _is_playable(self, vod):
-        return vod['type'] in ['VOD_VIDEO', 'VOD']
+        try:
+            return vod['type'] in ['VOD_VIDEO', 'VOD']
+        except:
+            return None
     
     """
     Gets the playback data for a vod, including the title, max height, and stream links, from the imggaming api.
