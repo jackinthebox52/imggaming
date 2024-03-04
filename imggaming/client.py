@@ -2,8 +2,6 @@ import requests
 import json
 import time
 import os
-# This file will contain the client for the imggaming api
-# The client will be used to interact with the imggaming api, and will be used to download UFC fight pass vods
 
 class API:
     
@@ -24,7 +22,7 @@ class API:
     The string can be used directly in the ffmpeg command as the header string. 
     """
     def compile_headers_ffmpeg(self): #To be used for ffmpeg headers
-        headers = _compile_headers(True)
+        headers = self._compile_headers(True)
         if not headers:
             print('[ERROR] Could not compile headers for ffmpeg')
             return None
@@ -147,6 +145,8 @@ class API:
     returns: json(dict), containing the vod data
     """
     def get_vod_data(self, vod):
+        if type(vod) == int:
+            vod = str(vod)
         vod_url = f'https://dce-frontoffice.imggaming.com/api/v4/vod/{vod}?includePlaybackDetails=URL'
         headers = self._compile_headers(auth=True)
         response = requests.get(vod_url, headers=headers)
@@ -203,7 +203,7 @@ class API:
                 id = os.environ['IMGGAMING_AUTH_ID']
                 secret = os.environ['IMGGAMING_AUTH_PASS']
             except:
-                print('[ERROR] No credentials provided, neither paramters nor environment variables.')
+                print('[ERROR] No credentials provided, neither parameters nor environment variables.')
                 return None
         
         credentials = {'id': id, 'secret': secret}
@@ -231,7 +231,7 @@ def test_main():
     client = API()
     client.authenticate()
     franklin_vs_le = 30852
-    print(client.download_vod(281532))
+    print(client.get_playback_data(281532))
     
 if __name__ == '__main__':
     test_main()

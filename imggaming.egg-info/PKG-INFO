@@ -1,0 +1,12 @@
+Metadata-Version: 2.1
+Name: imggaming
+Version: 0.1
+Summary: A REST api client for the imggaming api, written in python.
+Home-page: https://github.com/jackinthebox52/imggaming
+Author: jackinthebox52
+Author-email: jackmassey2000@gmail.com
+Keywords: imggaming,api,wrapper,client
+Classifier: License :: OSI Approved :: MIT License
+Classifier: Programming Language :: Python :: 3.6
+Classifier: Programming Language :: Python :: 3.7
+Requires-Python: >=3.6, <4
