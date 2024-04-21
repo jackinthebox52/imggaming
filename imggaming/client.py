@@ -3,11 +3,35 @@ import json
 import time
 import os
 
+class VOD:
+        
+        def __init__(self, vod_data):
+            self.id = vod_data['id']
+            self.title = vod_data['title']
+            self.max_height = vod_data['maxHeight']
+            self.stream_links = vod_data['stream_links']
+            self.type = vod_data['type']
+            
+        def __str__(self):
+            return f'VOD: {self.title} ({self.id})'
+        
+        def __repr__(self):
+            return f'VOD: {self.title} ({self.id})'
+        
+        def get_stream_link(self, height=None):
+            if not height:
+                height = self.max_height
+            try:
+                return self.stream_links[height]
+            except:
+                return None
+
 class API:
     
-    def __init__(self):
+    def __init__(self, verbose: bool = False):
         self.AuthToken = None
         self.RefreshToken = None
+        self.verbose = verbose
     
     def _compile_headers(self, auth):
         X_API_KEY = '857a1e5d-e35e-4fdf-805b-a87b6f8364bf'
@@ -32,26 +56,39 @@ class API:
             headers_string += f'{key}: {value}\n'
         return headers_string
         
-    def _is_playable(self, vod):
+    """Takes an id and returns a boolean indicating whether the item is playable (i.e. a VOD)"""
+    def _is_playable(self, vod: dict):
         try:
             return vod['type'] in ['VOD_VIDEO', 'VOD']
         except:
             return None
     
+    """Given an id, returns whether the item is a VOD or a playlist, by querying the api endpoints for each type."""
+    def vod_or_playlist(self, id):
+        vod_data = self.get_vod_data(id)
+        if vod_data:
+            return 'VOD'
+        
+        list_ids = self.unpack_playlist(id)
+        if list_ids:
+            return 'PLAYLIST'
+        return None
+            
+    
     """
-    Gets the playback data for a vod, including the title, max height, and stream links, from the imggaming api.
+    Gets the playback data for a given vod (id), including the title, max height, and stream links, from the imggaming api. (Gets urls from get_vod_data, then gets stream links from those urls)
     args:   vod_id: int, the id of the vod to get playback data for
     returns: dict, containing the title, max_height, and stream_links(dict), refer to the documentation for more information.
     """
-    def get_playback_data(self, vod_id):
+    def get_playback_data(self, vod_id: int) -> dict:
         vod_data = self.get_vod_data(vod_id)
         
         if not vod_data:
-            print('[ERROR] Could not get vod data')
+            print(f'[ERROR] Could not get vod data for vod_id: {str(vod_id)}') if self.verbose else None
             return None   
         
         if not self._is_playable(vod_data):
-            print('[ERROR] VOD is not playable')
+            print(f'[ERROR] VOD is not playable: {str(vod_id)}') if self.verbose else None
             return None
         
         title = vod_data['title']
@@ -120,7 +157,7 @@ class API:
             rows: int, the number of rows to return, defaults to 12
     returns: json(dict), containing the browse results
     """
-    def browse(self, buckets=10, rows=12):
+    def browse(self, buckets=10, rows=12) -> dict:
         bspp = 20 #No idea what this is, possibly bucket shortcut per page?
         browse_url = f'''https://dce-frontoffice.imggaming.com/api/v4/content/browse?bpp={buckets}&rpp={rows}&displaySectionLinkBuckets=SHOW&displayEpgBuckets=HIDE&displayEmptyBucketShortcuts=SHOW&displayContentAvailableOnSignIn=SHOW&displayGeoblocked=HIDE&bspp={bspp}'''
                 
@@ -139,12 +176,12 @@ class API:
         
         
     """
-    Takes in a vod id and returns the json results for that vod from the api endpoint.
+    Takes in a vod id and returns the json results for that vod from the api endpoint. Int vod ids auto-convert to str.
     https://dce-frontoffice.imggaming.com/api/v4/vod/41346?includePlaybackDetails=URL
     args:   vod: int, the id of the vod to get data for
     returns: json(dict), containing the vod data
     """
-    def get_vod_data(self, vod):
+    def get_vod_data(self, vod: int|str) -> dict:
         if type(vod) == int:
             vod = str(vod)
         vod_url = f'https://dce-frontoffice.imggaming.com/api/v4/vod/{vod}?includePlaybackDetails=URL'
@@ -157,18 +194,38 @@ class API:
             if self.authenticate():
                 return self.get_vod_data(vod)
         else:
-            print('[ERROR] Could not get vod data. HTTP status code: ' + str(response.status_code))
+            print('[ERROR] Could not get vod data. HTTP status code: ' + str(response.status_code)) if self.verbose else None
             return None
 
+        return response.json()
+    
+    def get_playlist_data(self, playlist: int|str) -> dict:
+        if type(playlist) == int:
+            playlist = str(playlist)
+        playlist_url = f'https://dce-frontoffice.imggaming.com/api/v4/playlist/{playlist}?bpp=undefined&rpp=250&displaySectionLinkBuckets=HIDE&displayEpgBuckets=HIDE&displayEmptyBucketShortcuts=SHOW'
+        headers = self._compile_headers(auth=True)
+        response = requests.get(playlist_url, headers=headers)
+        
+        if response.status_code in [200, 201]:
+            pass
+        elif response.status_code == 401:
+            if self.authenticate():
+                return self.get_playlist_data(playlist)
+        else:
+            print('[ERROR] Could not get playlist data. HTTP status code: ' + str(response.status_code))
+            return None
+        
         return response.json()
     
     """
     Takes a playlist id as input and returns a list of vod ids contained in the playlist. Returns None if the playlist is empty or does not exist. 
     Can return up to 250 vods from a playlist. (NOTE: This may be able to be increased by changing the bpp parameter in the url, but this is untested.)
     args:   playlist: int, the id of the playlist to unpack
-    returns: list of vod ids
+    returns: id_list: list[int], a list of vod ids
     """
-    def unpack_playlist(self, playlist):
+    def unpack_playlist(self, playlist: int|str) -> list[int]:
+        if type(playlist) == int:
+            playlist = str(playlist)
         playlist_url = f'https://dce-frontoffice.imggaming.com/api/v4/playlist/{playlist}?bpp=undefined&rpp=250&displaySectionLinkBuckets=HIDE&displayEpgBuckets=HIDE&displayEmptyBucketShortcuts=SHOW'
         headers = self._compile_headers(auth=True)
         response = requests.get(playlist_url, headers=headers)
@@ -187,14 +244,13 @@ class API:
         id_list = []
         for vod in vods:
             if vod['type'] == 'VOD':
-                id_list.append(vod['id'])
-        print(id_list)
+                id_list.append(int(vod['id']))
         return id_list
     
         
     
     """Returns a boolean indicating whether authentication was successful"""
-    def authenticate(self, id=None, secret=None):
+    def authenticate(self, id:str = None, secret:str = None):
         login_url = 'https://dce-frontoffice.imggaming.com/api/v2/login'
         headers = self._compile_headers(auth=False)
         
@@ -228,10 +284,12 @@ class API:
 
 
 def test_main():
+    import pprint
     client = API()
     client.authenticate()
     franklin_vs_le = 30852
-    print(client.get_playback_data(281532))
+    print(client.vod_or_playlist(franklin_vs_le))
+    print(client.vod_or_playlist(9330))
     
 if __name__ == '__main__':
     test_main()
