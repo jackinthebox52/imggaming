@@ -199,6 +199,7 @@ class API:
 
         return response.json()
     
+    """Takes in a playlist id and returns the json results for that playlist from the api endpoint. Int playlist ids auto-convert to str."""
     def get_playlist_data(self, playlist: int|str) -> dict:
         if type(playlist) == int:
             playlist = str(playlist)
